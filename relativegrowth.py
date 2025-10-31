@@ -13,9 +13,9 @@ def add_leading_zeroes(x):
         x = 0
     return "{:02d}".format(int(x))
 
-astro_url = "https://drive.google.com/uc?id=1GySlfSGMIt0LZb_XCgP29DaqPL2aCISI"
-tsne_url = "https://drive.google.com/uc?id=1AlqzyJQSxfK2MJGVdQriZfBtnGrzDzVS"
-names_url = "https://drive.google.com/uc?id=1s6T-5KchhgOnoCX16aMYGtJ1_TiU_hqm"
+astro_url = "https://drive.google.com/uc?export=download&id=1GySlfSGMIt0LZb_XCgP29DaqPL2aCISI"
+tsne_url = "https://drive.google.com/uc?export=download&id=1AlqzyJQSxfK2MJGVdQriZfBtnGrzDzVS"
+names_url = "https://drive.google.com/uc?export=download&id=1s6T-5KchhgOnoCX16aMYGtJ1_TiU_hqm"
 
 data = pd.read_csv(astro_url, index_col=0)
 data['years'] = data['years'].fillna(0)
