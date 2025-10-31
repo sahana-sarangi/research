@@ -108,7 +108,7 @@ final_chart = (
     )
     .properties(
         title="Relative Growth of Topics",
-        width=850,
+        width=700,
         height=700
     )
     .configure_title(fontSize=18, anchor="start")
