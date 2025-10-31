@@ -107,7 +107,6 @@ final_chart = (
         ],
     )
     .properties(
-        title="Relative Growth of Topics",
         width=700,
         height=1000
     )
