@@ -25,8 +25,8 @@ data = data.rename(columns={"years": "Year"})
 df = pd.read_csv(tsne_url, encoding="utf8")
 df = df.rename(columns={
     "Topic Name (Post Forced)": "Cluster",
-    "x": "tsne-x",
-    "y": "tsne-y",
+    "x": "TSNE-x",
+    "y": "TSNE-y",
     "title": "AbstractTitle",
     "abstract": "Abstract"
 })
@@ -78,8 +78,8 @@ chart = (
     alt.Chart(df)
     .mark_circle(size=25, opacity=0.9)
     .encode(
-        x=alt.X('TSNE-x:Q', title='TSNE-x'),
-        y=alt.Y('TSNE-y:Q', title='TSNE-y'),
+        x=alt.X('TSNE-x:Q', title='tsne-x'),
+        y=alt.Y('TSNE-y:Q', title='tsne-y'),
         color=alt.Color(
             'AvgGrowthRate:Q',
             title='growth rate (Δ abstracts / year)',
