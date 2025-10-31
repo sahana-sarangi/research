@@ -22,7 +22,7 @@ data['years'] = data['years'].fillna(0)
 data.years = data.years.astype(int)
 data = data.rename(columns={"years": "Year"})
 
-df = pd.read_csv(tsne_url, encoding="utf8", errors='ignore')
+df = pd.read_csv(tsne_url, encoding="utf8")
 df = df.rename(columns={
     "Topic Name (Post Forced)": "Cluster",
     "x": "TSNE-x",
