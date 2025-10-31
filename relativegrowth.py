@@ -50,70 +50,72 @@ df = df.rename(columns={"GPT_Names": "TopicName"})
 df["TopicName"] = df["TopicName"].fillna("Topic " + df["Topic (Post Forced)"].astype(str))
 df["TopicName"] = df["TopicName"].apply(lambda x: x if len(x) <= 50 else x[:47] + "...")
 
-growth_df = (
+
+topic_growth = (
     df.groupby(["TopicName", "Year"])
     .size()
-    .reset_index(name="Count")
-    .sort_values(["TopicName", "Year"])
+    .reset_index(name="AbstractsPerYear")
 )
 
-growth_df["GrowthRate"] = growth_df.groupby("TopicName")["Count"].diff()
-growth_df["GrowthRate"] = growth_df["GrowthRate"].fillna(0)
 
-avg_growth = (
-    growth_df.groupby("TopicName")["GrowthRate"]
-    .mean()
-    .reset_index(name="AvgGrowthRate")
+growth_rates = (
+    topic_growth.groupby("TopicName")
+    .apply(lambda g: np.polyfit(g["Year"], g["AbstractsPerYear"], 1)[0] if len(g) > 1 else 0)
+    .reset_index(name="GrowthRate")
 )
 
-df = df.merge(avg_growth, on="TopicName", how="left")
-df["AvgGrowthRate"] = df["AvgGrowthRate"].fillna(0)
+df = df.merge(growth_rates, on="TopicName", how="left")
+df["GrowthRate"] = df["GrowthRate"].fillna(0.0)
+
+
+max_abs_growth = float(np.abs(df["GrowthRate"]).max())
+if max_abs_growth == 0 or np.isclose(max_abs_growth, 0.0):
+    max_abs_growth = 1e-6
 
 color_scale = alt.Scale(
-    domain=[df["AvgGrowthRate"].min(), 0, df["AvgGrowthRate"].max()],
-    range=["#4575b4", "#762a83", "#d73027"]
+    domain=[-max_abs_growth, 0.0, max_abs_growth],
+    range=["#4575b4", "#762a83", "#d73027"],  
 )
 
-chart = (
+
+final_chart = (
     alt.Chart(df)
     .mark_circle(size=25, opacity=0.9)
     .encode(
-        x=alt.X('TSNE-x:Q', title='tsne-x'),
-        y=alt.Y('TSNE-y:Q', title='tsne-y'),
+        x=alt.X("TSNE-x:Q", title="t-SNE x"),
+        y=alt.Y("TSNE-y:Q", title="t-SNE y"),
         color=alt.Color(
-            'AvgGrowthRate:Q',
-            title='growth rate (Δ abstracts / year)',
+            "GrowthRate:Q",
             scale=color_scale,
+            title="Topic Growth Rate (abstracts per year)",
             legend=alt.Legend(
-                title="growth rate (Δ abstracts / year)",
-                values=[df["AvgGrowthRate"].min(), -10, -5, 0, 5, 10, df["AvgGrowthRate"].max()],
-                titleFontSize=12,
-                labelFontSize=10
+                orient="right",
+                title="Growth Trend",
+                titleFontSize=13,
+                labelFontSize=11,
+                labelLimit=250,
+                gradientLength=200,
+                direction="vertical",
+                gradientThickness=20
             )
         ),
         tooltip=[
-            alt.Tooltip('AbstractTitle', title='Abstract Title'),
-            alt.Tooltip('TopicName:N', title='Topic Name'),
-            alt.Tooltip('AvgGrowthRate:Q', title='Growth Rate (Δ abstracts / year)', format=".2f"),
-            alt.Tooltip('Year:Q', title='Year')
-        ]
+            alt.Tooltip("AbstractTitle:N", title="Abstract Title"),
+            alt.Tooltip("TopicName:N", title="Topic Name"),
+            alt.Tooltip("GrowthRate:Q", title="Growth Rate (Δ abstracts/year)", format=".2f"),
+            alt.Tooltip("Year:Q", title="Year")
+        ],
     )
     .properties(
-        title='Relative Growth',
-        width=900,
+        title="Relative Growth of Topics",
+        width=850,
         height=700
     )
-    .configure_title(
-        fontSize=18,
-        anchor='start'
-    )
-    .configure_axis(
-        labelFontSize=12,
-        titleFontSize=14,
-        grid=True
-    )
+    .configure_title(fontSize=18, anchor="start")
+    .configure_axis(labelFontSize=12, titleFontSize=14, grid=True)
     .configure_view(strokeWidth=0)
 )
+
 
 st.title("Relative growth")
 st.altair_chart(chart, use_container_width=True)
