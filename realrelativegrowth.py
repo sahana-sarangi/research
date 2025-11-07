@@ -10,9 +10,9 @@ astro_url = "https://drive.google.com/uc?export=download&id=1GySlfSGMIt0LZb_XCgP
 tsne_url = "https://drive.google.com/uc?export=download&id=1AlqzyJQSxfK2MJGVdQriZfBtnGrzDzVS"
 names_url = "https://drive.google.com/uc?export=download&id=1s6T-5KchhgOnoCX16aMYGtJ1_TiU_hqm"
 
-astro = pd.read_csv(astro_url, encoding="utf8", errors="ignore")
-tsne = pd.read_csv(tsne_url, encoding="utf8", errors="ignore")
-names = pd.read_csv(names_url, encoding="utf8", errors="ignore")
+astro = pd.read_csv(astro_url, encoding="utf8")
+tsne = pd.read_csv(tsne_url, encoding="utf8")
+names = pd.read_csv(names_url, encoding="utf8")
 
 df = tsne.merge(names, on="Topic", how="left").merge(astro, on="Topic", how="left")
 df = df.sort_values(["Topic", "Year"])
