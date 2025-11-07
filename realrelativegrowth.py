@@ -2,9 +2,8 @@ import pandas as pd
 import numpy as np
 import altair as alt
 import streamlit as st
-from sklearn.linear_model import LinearRegression
 
-st.set_page_config(layout="wide", page_title="Relative Growth")
+st.set_page_config(layout="wide", page_title="Smoothed Relative Growth")
 
 alt.data_transformers.disable_max_rows()
 
@@ -50,23 +49,22 @@ df = df.rename(columns={"GPT_Names": "TopicName"})
 df["TopicName"] = df["TopicName"].fillna("Topic " + df["Topic (Post Forced)"].astype(str))
 df["TopicName"] = df["TopicName"].apply(lambda x: x if len(x) <= 50 else x[:47] + "...")
 
-
 topic_growth = (
     df.groupby(["TopicName", "Year"])
     .size()
     .reset_index(name="AbstractsPerYear")
 )
 
-
+# Smooth relative growth without sklearn
 def calc_smoothed_growth(g):
     g = g[g["AbstractsPerYear"] > 0]
     if len(g) < 2:
         return 0
-    X = g[["Year"]]
-    y = np.log(g["AbstractsPerYear"])
-    model = LinearRegression().fit(X, y)
-    slope = model.coef_[0]
-    return np.exp(slope) - 1  
+    x = g["Year"].values
+    y = np.log(g["AbstractsPerYear"].values)
+    A = np.vstack([x, np.ones(len(x))]).T
+    slope, _ = np.linalg.lstsq(A, y, rcond=None)[0]
+    return np.exp(slope) - 1  # average % growth per year
 
 smoothed_growth = (
     topic_growth.groupby("TopicName")
@@ -77,14 +75,13 @@ smoothed_growth = (
 df = df.merge(smoothed_growth, on="TopicName", how="left")
 df["RelativeGrowthRate"] = df["RelativeGrowthRate"].fillna(0.0)
 
-
 max_abs_growth = float(np.abs(df["RelativeGrowthRate"]).max())
 if max_abs_growth == 0 or np.isclose(max_abs_growth, 0.0):
     max_abs_growth = 1e-6
 
 color_scale = alt.Scale(
     domain=[-max_abs_growth, 0.0, max_abs_growth],
-    range=["#4575b4", "#762a83", "#d73027"],
+    range=["#4575b4", "#762a83", "#d73027"],  # blue → purple → red
 )
 
 final_chart = (
@@ -96,13 +93,14 @@ final_chart = (
         color=alt.Color(
             "RelativeGrowthRate:Q",
             scale=color_scale,
-            title="Avg Relative Growth (% change per year)",
+            title="Avg. Relative Growth Rate (% per year)",
             legend=alt.Legend(
                 orient="right",
-                title="Average Growth Rate",
+                title="Avg. % Growth/Year",
                 titleFontSize=13,
                 labelFontSize=11,
                 labelLimit=250,
+                format=".0%",
                 gradientLength=200,
                 direction="vertical",
                 gradientThickness=20
@@ -121,5 +119,5 @@ final_chart = (
     .configure_view(strokeWidth=0)
 )
 
-st.title("Relative Growth Figure (% change)")
+st.title("Smoothed Relative Growth of Research Topics")
 st.altair_chart(final_chart, use_container_width=True)
