@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 import altair as alt
 import streamlit as st
-import os
+from sklearn.linear_model import LinearRegression
 
-st.set_page_config(layout="wide", page_title="Relative growth")
+st.set_page_config(layout="wide", page_title="Relative Growth")
 
 alt.data_transformers.disable_max_rows()
 
@@ -58,27 +58,34 @@ topic_growth = (
 )
 
 
-topic_growth["RelativeGrowth"] = (
-    topic_growth.groupby("TopicName")["AbstractsPerYear"].pct_change() * 100
+def calc_smoothed_growth(g):
+    g = g[g["AbstractsPerYear"] > 0]
+    if len(g) < 2:
+        return 0
+    X = g[["Year"]]
+    y = np.log(g["AbstractsPerYear"])
+    model = LinearRegression().fit(X, y)
+    slope = model.coef_[0]
+    return np.exp(slope) - 1  
+
+smoothed_growth = (
+    topic_growth.groupby("TopicName")
+    .apply(calc_smoothed_growth)
+    .reset_index(name="RelativeGrowthRate")
 )
-topic_growth["RelativeGrowth"] = topic_growth["RelativeGrowth"].fillna(0)
+
+df = df.merge(smoothed_growth, on="TopicName", how="left")
+df["RelativeGrowthRate"] = df["RelativeGrowthRate"].fillna(0.0)
 
 
-df = pd.merge(df, topic_growth[["TopicName", "Year", "RelativeGrowth"]],
-              on=["TopicName", "Year"], how="left")
-
-df["RelativeGrowth"] = df["RelativeGrowth"].fillna(0.0)
-
-
-max_abs_growth = float(np.abs(df["RelativeGrowth"]).max())
+max_abs_growth = float(np.abs(df["RelativeGrowthRate"]).max())
 if max_abs_growth == 0 or np.isclose(max_abs_growth, 0.0):
     max_abs_growth = 1e-6
 
 color_scale = alt.Scale(
     domain=[-max_abs_growth, 0.0, max_abs_growth],
-    range=["#4575b4", "#762a83", "#d73027"],  
+    range=["#4575b4", "#762a83", "#d73027"],
 )
-
 
 final_chart = (
     alt.Chart(df)
@@ -87,12 +94,12 @@ final_chart = (
         x=alt.X("TSNE-x:Q", title="t-SNE x"),
         y=alt.Y("TSNE-y:Q", title="t-SNE y"),
         color=alt.Color(
-            "RelativeGrowth:Q",
+            "RelativeGrowthRate:Q",
             scale=color_scale,
-            title="Relative Growth (% change per year)",
+            title="Avg Relative Growth (% change per year)",
             legend=alt.Legend(
                 orient="right",
-                title="Growth (% per Year)",
+                title="Average Growth Rate",
                 titleFontSize=13,
                 labelFontSize=11,
                 labelLimit=250,
@@ -104,18 +111,15 @@ final_chart = (
         tooltip=[
             alt.Tooltip("AbstractTitle:N", title="Abstract Title"),
             alt.Tooltip("TopicName:N", title="Topic Name"),
-            alt.Tooltip("RelativeGrowth:Q", title="Relative Growth (%)", format=".2f"),
+            alt.Tooltip("RelativeGrowthRate:Q", title="Avg. % Growth/Year", format=".2%"),
             alt.Tooltip("Year:Q", title="Year")
         ],
     )
-    .properties(
-        width=700,
-        height=1000
-    )
+    .properties(width=700, height=1000)
     .configure_title(fontSize=18, anchor="start")
     .configure_axis(labelFontSize=12, titleFontSize=14, grid=True)
     .configure_view(strokeWidth=0)
 )
 
-st.title("Relative (% per year) growth")
+st.title("Relative Growth Figure (% change)")
 st.altair_chart(final_chart, use_container_width=True)
