@@ -3,7 +3,7 @@ import numpy as np
 import altair as alt
 import streamlit as st
 
-st.set_page_config(layout="wide", page_title="Smoothed Relative Growth")
+st.set_page_config(layout="wide", page_title="Relative Growth Figure, Normalized")
 
 alt.data_transformers.disable_max_rows()
 
@@ -12,9 +12,11 @@ def add_leading_zeroes(x):
         x = 0
     return "{:02d}".format(int(x))
 
+
 astro_url = "https://drive.google.com/uc?export=download&id=1GySlfSGMIt0LZb_XCgP29DaqPL2aCISI"
 tsne_url = "https://drive.google.com/uc?export=download&id=1AlqzyJQSxfK2MJGVdQriZfBtnGrzDzVS"
 names_url = "https://drive.google.com/uc?export=download&id=1s6T-5KchhgOnoCX16aMYGtJ1_TiU_hqm"
+
 
 data = pd.read_csv(astro_url, index_col=0)
 data['years'] = data['years'].fillna(0)
@@ -49,31 +51,37 @@ df = df.rename(columns={"GPT_Names": "TopicName"})
 df["TopicName"] = df["TopicName"].fillna("Topic " + df["Topic (Post Forced)"].astype(str))
 df["TopicName"] = df["TopicName"].apply(lambda x: x if len(x) <= 50 else x[:47] + "...")
 
+
 topic_growth = (
     df.groupby(["TopicName", "Year"])
     .size()
     .reset_index(name="AbstractsPerYear")
 )
 
-# Smooth relative growth without sklearn
-def calc_smoothed_growth(g):
-    g = g[g["AbstractsPerYear"] > 0]
-    if len(g) < 2:
-        return 0
-    x = g["Year"].values
-    y = np.log(g["AbstractsPerYear"].values)
-    A = np.vstack([x, np.ones(len(x))]).T
-    slope, _ = np.linalg.lstsq(A, y, rcond=None)[0]
-    return np.exp(slope) - 1  # average % growth per year
+# Step 2: Normalize per year
+total_per_year = topic_growth.groupby("Year")["AbstractsPerYear"].sum().reset_index(name="TotalPerYear")
+topic_growth = pd.merge(topic_growth, total_per_year, on="Year", how="left")
+topic_growth["NormalizedCount"] = topic_growth["AbstractsPerYear"] / topic_growth["TotalPerYear"]
 
-smoothed_growth = (
+
+def calc_normalized_growth(g):
+    g = g.sort_values("Year")
+    counts = g["NormalizedCount"].values
+    if len(counts) < 2:
+        return 0.0
+    pct_changes = (counts[1:] - counts[:-1]) / counts[:-1]
+    return np.mean(pct_changes)
+
+normalized_growth = (
     topic_growth.groupby("TopicName")
-    .apply(calc_smoothed_growth)
+    .apply(calc_normalized_growth)
     .reset_index(name="RelativeGrowthRate")
 )
 
-df = df.merge(smoothed_growth, on="TopicName", how="left")
+
+df = df.merge(normalized_growth, on="TopicName", how="left")
 df["RelativeGrowthRate"] = df["RelativeGrowthRate"].fillna(0.0)
+
 
 max_abs_growth = float(np.abs(df["RelativeGrowthRate"]).max())
 if max_abs_growth == 0 or np.isclose(max_abs_growth, 0.0):
@@ -81,7 +89,7 @@ if max_abs_growth == 0 or np.isclose(max_abs_growth, 0.0):
 
 color_scale = alt.Scale(
     domain=[-max_abs_growth, 0.0, max_abs_growth],
-    range=["#4575b4", "#762a83", "#d73027"],  # blue → purple → red
+    range=["#4575b4", "#762a83", "#d73027"],  
 )
 
 final_chart = (
@@ -93,14 +101,14 @@ final_chart = (
         color=alt.Color(
             "RelativeGrowthRate:Q",
             scale=color_scale,
-            title="Avg. Relative Growth Rate (% per year)",
+            title="Avg Relative Growth (% change per year)",
             legend=alt.Legend(
                 orient="right",
                 title="Avg. % Growth/Year",
                 titleFontSize=13,
                 labelFontSize=11,
                 labelLimit=250,
-                format=".0%",
+                format=".1%",  
                 gradientLength=200,
                 direction="vertical",
                 gradientThickness=20
@@ -119,5 +127,5 @@ final_chart = (
     .configure_view(strokeWidth=0)
 )
 
-st.title("Smoothed Relative Growth of Research Topics")
+st.title("Relative Growth, Normalized")
 st.altair_chart(final_chart, use_container_width=True)
