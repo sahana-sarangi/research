@@ -1,87 +1,121 @@
-import streamlit as st
 import pandas as pd
+import numpy as np
 import altair as alt
-import requests
-import io
+import streamlit as st
+import os
 
-st.set_page_config(page_title="Relative Growth Figure", layout="wide")
-st.title("Relative Growth (% change)")
+st.set_page_config(layout="wide", page_title="Relative growth")
 
-@st.cache_data
-def load_csv_from_gdrive(file_id):
-    url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    response = requests.get(url)
-    if response.status_code != 200:
-        st.error(f"Failed to download file with id {file_id}")
-        st.stop()
-    return pd.read_csv(io.BytesIO(response.content), encoding="utf8", errors="ignore")
+alt.data_transformers.disable_max_rows()
 
-astro_id = "1GySlfSGMIt0LZb_XCgP29DaqPL2aCISI"
-tsne_id  = "1AlqzyJQSxfK2MJGVdQriZfBtnGrzDzVS"
-names_id = "1s6T-5KchhgOnoCX16aMYGtJ1_TiU_hqm"
+def add_leading_zeroes(x):
+    if pd.isna(x):
+        x = 0
+    return "{:02d}".format(int(x))
 
-astro = load_csv_from_gdrive(astro_id)
-tsne = load_csv_from_gdrive(tsne_id)
-names = load_csv_from_gdrive(names_id)
+astro_url = "https://drive.google.com/uc?export=download&id=1GySlfSGMIt0LZb_XCgP29DaqPL2aCISI"
+tsne_url = "https://drive.google.com/uc?export=download&id=1AlqzyJQSxfK2MJGVdQriZfBtnGrzDzVS"
+names_url = "https://drive.google.com/uc?export=download&id=1s6T-5KchhgOnoCX16aMYGtJ1_TiU_hqm"
 
-for df in [astro, tsne, names]:
-    df.columns = [c.strip() for c in df.columns]
+data = pd.read_csv(astro_url, index_col=0)
+data['years'] = data['years'].fillna(0)
+data.years = data.years.astype(int)
+data = data.rename(columns={"years": "Year"})
 
-if "Topic" in tsne.columns and "Topic" in names.columns:
-    df = tsne.merge(names, on="Topic", how="left").merge(astro, on="Topic", how="left")
-elif "TopicName" in tsne.columns:
-    df = tsne.merge(names, on="TopicName", how="left").merge(astro, on="TopicName", how="left")
-else:
-    st.error("Could not find a common merge key like 'Topic' or 'TopicName'.")
-    st.stop()
+df = pd.read_csv(tsne_url, encoding="utf8")
+df = df.rename(columns={
+    "Topic Name (Post Forced)": "Cluster",
+    "x": "TSNE-x",
+    "y": "TSNE-y",
+    "title": "AbstractTitle",
+    "abstract": "Abstract"
+})
+df["Topic (Post Forced)"] = df["Topic (Post Forced)"].fillna(0).astype(int)
+df = pd.merge(df, data, on=['AbstractTitle'], suffixes=("_df", None))
+df = df.drop(columns=df.filter(regex="_df$").columns)
+df['Index'] = np.arange(1, df.shape[0] + 1)
+df["Cluster"] = df["Topic (Post Forced)"].apply(add_leading_zeroes)
 
-if "Year" not in df.columns:
-    st.error("Missing 'Year' column in dataset.")
-    st.stop()
-
-if "AbstractCount" not in df.columns:
-    if "Count" in df.columns:
-        df = df.rename(columns={"Count": "AbstractCount"})
-    else:
-        st.error("Missing 'AbstractCount' column in dataset.")
-        st.stop()
-
-df = df.sort_values(["TopicName", "Year"])
-df["RelativeGrowth"] = df.groupby("TopicName")["AbstractCount"].pct_change() * 100
-df["RelativeGrowth"] = df["RelativeGrowth"].fillna(0)
-
-min_g = df["RelativeGrowth"].min()
-max_g = df["RelativeGrowth"].max()
-
-color_scale = alt.Scale(
-    domain=[min_g, 0, max_g],
-    range=["#4575b4", "#762a83", "#d73027"]
+bt60_names = pd.read_csv(names_url)
+bt60_names = bt60_names.rename(columns={"title": "AbstractTitle"})
+bt60_names["Topic (Post Forced)"] = bt60_names["Topic (Post Forced)"].fillna(0).astype(int)
+df = pd.merge(
+    df,
+    bt60_names[["AbstractTitle", "GPT_Names", "Topic (Post Forced)"]],
+    on=["AbstractTitle", "Topic (Post Forced)"],
+    how="left"
 )
 
-chart = (
+df = df.rename(columns={"GPT_Names": "TopicName"})
+df["TopicName"] = df["TopicName"].fillna("Topic " + df["Topic (Post Forced)"].astype(str))
+df["TopicName"] = df["TopicName"].apply(lambda x: x if len(x) <= 50 else x[:47] + "...")
+
+
+topic_growth = (
+    df.groupby(["TopicName", "Year"])
+    .size()
+    .reset_index(name="AbstractsPerYear")
+)
+
+
+topic_growth["RelativeGrowth"] = (
+    topic_growth.groupby("TopicName")["AbstractsPerYear"].pct_change() * 100
+)
+topic_growth["RelativeGrowth"] = topic_growth["RelativeGrowth"].fillna(0)
+
+
+df = pd.merge(df, topic_growth[["TopicName", "Year", "RelativeGrowth"]],
+              on=["TopicName", "Year"], how="left")
+
+df["RelativeGrowth"] = df["RelativeGrowth"].fillna(0.0)
+
+
+max_abs_growth = float(np.abs(df["RelativeGrowth"]).max())
+if max_abs_growth == 0 or np.isclose(max_abs_growth, 0.0):
+    max_abs_growth = 1e-6
+
+color_scale = alt.Scale(
+    domain=[-max_abs_growth, 0.0, max_abs_growth],
+    range=["#4575b4", "#762a83", "#d73027"],  
+)
+
+
+final_chart = (
     alt.Chart(df)
-    .mark_circle(size=60, opacity=0.8)
+    .mark_circle(size=25, opacity=0.9)
     .encode(
-        x=alt.X("TSNE-x:Q", title="t-SNE X"),
-        y=alt.Y("TSNE-y:Q", title="t-SNE Y"),
+        x=alt.X("TSNE-x:Q", title="t-SNE x"),
+        y=alt.Y("TSNE-y:Q", title="t-SNE y"),
         color=alt.Color(
             "RelativeGrowth:Q",
             scale=color_scale,
+            title="Relative Growth (% change per year)",
             legend=alt.Legend(
-                title="Relative Growth (% change per year)",
-                titleFontSize=12,
-                labelFontSize=10
+                orient="right",
+                title="Growth (% per Year)",
+                titleFontSize=13,
+                labelFontSize=11,
+                labelLimit=250,
+                gradientLength=200,
+                direction="vertical",
+                gradientThickness=20
             )
         ),
         tooltip=[
+            alt.Tooltip("AbstractTitle:N", title="Abstract Title"),
             alt.Tooltip("TopicName:N", title="Topic Name"),
-            alt.Tooltip("Year:O", title="Year"),
-            alt.Tooltip("AbstractCount:Q", title="# of Abstracts"),
-            alt.Tooltip("RelativeGrowth:Q", title="Relative Growth (%)", format=".2f")
-        ]
+            alt.Tooltip("RelativeGrowth:Q", title="Relative Growth (%)", format=".2f"),
+            alt.Tooltip("Year:Q", title="Year")
+        ],
     )
-    .properties(width=900, height=650)
-    .interactive()
+    .properties(
+        width=700,
+        height=1000
+    )
+    .configure_title(fontSize=18, anchor="start")
+    .configure_axis(labelFontSize=12, titleFontSize=14, grid=True)
+    .configure_view(strokeWidth=0)
 )
 
-st.altair_chart(chart, use_container_width=True)
+st.title("Relative (% per year) growth")
+st.altair_chart(final_chart, use_container_width=True)
